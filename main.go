@@ -14,17 +14,16 @@ import (
 
 	"github.com/john-ayodeji/Seekr/handlers/sitemap_handler"
 	"github.com/john-ayodeji/Seekr/internal"
+	"github.com/john-ayodeji/Seekr/internal/database"
+	"github.com/john-ayodeji/Seekr/services/crawler"
 	"github.com/joho/godotenv"
-	"github.com/lib/pq"
+	_ "github.com/lib/pq"
 )
-
-type ApiConfig struct {
-	Port         int
-	RabbitMQ_Url string
-}
 
 func main() {
 	mux := http.NewServeMux()
+
+	//parse env variables
 	godotenv.Load()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -38,48 +37,76 @@ func main() {
 
 	rabbitMQ_URL := os.Getenv("RABBITMQ_URL")
 	dbURL := os.Getenv("DB_URL")
-
-	cfg := ApiConfig{
-		Port:         port,
-		RabbitMQ_Url: rabbitMQ_URL,
+	Workers, err := strconv.Atoi(os.Getenv("WORKERS"))
+	if err != nil {
+		log.Println(err)
 	}
 
+	//connect DB and stuffs
+	db, err3 := sql.Open("postgres", dbURL)
+	if err3 != nil {
+		fmt.Println(err3)
+		return
+	}
+	if err := db.Ping(); err != nil {
+		fmt.Printf("db ping failed: %v\n", err)
+		return
+	}
+	fmt.Println("db connection successful")
+
+ //parse ApiConfig - initialize global config
+ internal.Cfg = &internal.ApiConfig{
+     Port:         port,
+     RabbitMQ_Url: rabbitMQ_URL,
+     Db:           database.New(db),
+ }
+
+	//health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode("OK")
 	})
+
+	//register routes
 	RegisterRoutes(mux)
 
-	//Rabbit MQ stuffs
-	conn, ch, err := internal.ConnectRabbitMQ(cfg.RabbitMQ_Url)
+ //Rabbit MQ stuffs
+ conn, ch, err := internal.ConnectRabbitMQ(internal.Cfg.RabbitMQ_Url)
 
 	defer conn.Close()
 	defer ch.Close()
 	fmt.Println("RabbitMQ connection successful")
 
-	rConfig := internal.RabbitCfg
-	rConfig = &internal.RabbitConfig{
-		URL:        rabbitMQ_URL,
-		Connection: conn,
-		Channel:    ch,
-		Exchange:   "seekr_direct",
-	}
+ // Initialize global Rabbit config
+ internal.RabbitCfg = &internal.RabbitConfig{
+     URL:        rabbitMQ_URL,
+     Connection: conn,
+     Channel:    ch,
+     Exchange:   "seekr_direct",
+ }
 
-	rConfig.CreateExchange()
+ internal.RabbitCfg.CreateExchange()
 
-	_, err1 := rConfig.DeclareAndBindQueue("html_parser.jobs", "page.fetch.success", rConfig.Exchange, true)
+ _, err1 := internal.RabbitCfg.DeclareAndBindQueue("html_parser.jobs", "page.fetch.success", internal.RabbitCfg.Exchange, true)
 	if err1 != nil {
 		fmt.Println(err1)
 	}
-	_, err2 := rConfig.DeclareAndBindQueue("html_fetcher.jobs", "url.fetch.success", rConfig.Exchange, true)
-	if err2 != nil {
-		fmt.Println(err1)
-	}
+ _, err2 := internal.RabbitCfg.DeclareAndBindQueue("html_fetcher.jobs", "url.fetch.success", internal.RabbitCfg.Exchange, true)
+ if err2 != nil {
+        fmt.Println(err2)
+    }
 
-	//RB config parsed to others
-	sitemap_handler.RBcfg = *rConfig
+ //RB config parsed to others
+ sitemap_handler.RBcfg = *internal.RabbitCfg
+
+	//workers and shii
+	go func() {
+		for i := 0; i <= Workers; i++ {
+			crawler.ProcessHTML(conn)
+		}
+	}()
 
 	//Server shii
-	addr := fmt.Sprintf("localhost:%d", cfg.Port)
+ addr := fmt.Sprintf("localhost:%d", internal.Cfg.Port)
 	server := http.Server{Addr: addr, Handler: mux}
 	fmt.Printf("Server started on port %v\nURL: https://%v\n", port, addr)
 	if err := server.ListenAndServe(); err != nil {

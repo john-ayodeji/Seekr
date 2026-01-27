@@ -1,6 +1,7 @@
 package crawler
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,14 @@ import (
 type HTML struct {
 	HTML string
 }
+
+var (
+	ErrRedirect    = errors.New("redirect response")
+	ErrForbidden   = errors.New("forbidden")
+	ErrNotFound    = errors.New("not found")
+	ErrRateLimited = errors.New("rate limited")
+	ErrServerError = errors.New("server error")
+)
 
 func GetHTML(url string) (HTML, error) {
 	req, err := http.NewRequest("GET", url, nil)
@@ -32,15 +41,40 @@ func GetHTML(url string) (HTML, error) {
 		return HTML{}, err
 	}
 
-	if res.StatusCode == 200 || res.StatusCode == 301 || res.StatusCode == 302 {
+	html, err := FetchHTML(res)
+	if err != nil {
+		return HTML{}, err
+	}
+	return html, nil
+}
+
+func FetchHTML(res *http.Response) (HTML, error) {
+	switch res.StatusCode {
+
+	case 200:
 		htmlBytes, err := io.ReadAll(res.Body)
 		if err != nil {
 			return HTML{}, err
 		}
-		return HTML{
-			HTML: string(htmlBytes),
-		}, nil
-	} else {
-		return HTML{}, fmt.Errorf("crawling is not allowed on this page")
+		return HTML{HTML: string(htmlBytes)}, nil
+
+	case 301, 302, 307, 308:
+		// follow redirect elsewhere, don’t index this URL
+		return HTML{}, ErrRedirect
+
+	case 401, 403:
+		return HTML{}, ErrForbidden
+
+	case 404, 410:
+		return HTML{}, ErrNotFound
+
+	case 429:
+		return HTML{}, ErrRateLimited
+
+	case 500, 502, 503, 504:
+		return HTML{}, ErrServerError
+
+	default:
+		return HTML{}, fmt.Errorf("unexpected status code: %d", res.StatusCode)
 	}
 }

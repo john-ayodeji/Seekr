@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/john-ayodeji/Seekr/internal"
+	"github.com/john-ayodeji/Seekr/internal/database"
 	"github.com/john-ayodeji/Seekr/services/sitemap_processor"
 	"github.com/john-ayodeji/Seekr/utils"
 )
@@ -67,7 +69,7 @@ func HandleSitemapSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sitemap, err := sitemap_processor.ParseSitemap(normalizedURL)
+	sitemap, jobID, err := sitemap_processor.ParseSitemap(normalizedURL)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(errorResponse{
@@ -105,9 +107,11 @@ func HandleSitemapSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 
 		payload := struct {
-			URL string `json:"url"`
+			JobID string `json:"job_id"`
+			URL   string `json:"url"`
 		}{
-			URL: nURL,
+			JobID: jobID,
+			URL:   nURL,
 		}
 
 		if err := internal.PublishToQueue(
@@ -120,6 +124,19 @@ func HandleSitemapSubmit(w http.ResponseWriter, r *http.Request) {
 			_ = json.NewEncoder(w).Encode(errorResponse{
 				Status:  "error",
 				Message: "failed to enqueue sitemap urls",
+			})
+			return
+		}
+
+		if err := internal.Cfg.Db.CreateJob(r.Context(), database.CreateJobParams{
+			ID:    uuid.New(),
+			Jobid: jobID,
+			Url:   nURL,
+		}); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(errorResponse{
+				Status:  "error",
+				Message: "failed to store job",
 			})
 			return
 		}

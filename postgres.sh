@@ -1,10 +1,10 @@
 #!/bin/bash
 
 CONTAINER_NAME=seekr_postgres
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
+POSTGRES_USER=deji
+POSTGRES_PASSWORD=seekr
 POSTGRES_DB=seekr_db
-POSTGRES_PORT=5432
+POSTGRES_PORT=5433
 VOLUME_NAME=seekr_postgres_data
 
 start_or_run () {

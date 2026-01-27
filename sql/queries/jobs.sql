@@ -1,0 +1,11 @@
+-- name: CreateJob :exec
+INSERT INTO jobs(
+    ID, JOBID, URL
+) VALUES (
+    $1, $2, $3
+);
+
+-- name: MarkFetched :exec
+UPDATE jobs
+SET fetched = true
+WHERE url = $1;
