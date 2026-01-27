@@ -18,6 +18,17 @@ type Job struct {
 	Indexed   bool
 }
 
+type ParsedHtml struct {
+	ID          uuid.UUID
+	Jobid       string
+	Url         string
+	Title       string
+	Description string
+	Headings    string
+	Paragraphs  string
+	Links       string
+}
+
 type RawHtml struct {
 	ID    uuid.UUID
 	Jobid string

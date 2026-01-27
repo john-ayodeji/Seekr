@@ -9,3 +9,8 @@ INSERT INTO jobs(
 UPDATE jobs
 SET fetched = true
 WHERE url = $1;
+
+-- name: MarkCrawled :exec
+UPDATE jobs
+SET crawled = true
+WHERE url = $1;

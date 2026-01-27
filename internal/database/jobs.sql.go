@@ -30,6 +30,17 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) error {
 	return err
 }
 
+const markCrawled = `-- name: MarkCrawled :exec
+UPDATE jobs
+SET crawled = true
+WHERE url = $1
+`
+
+func (q *Queries) MarkCrawled(ctx context.Context, url string) error {
+	_, err := q.db.ExecContext(ctx, markCrawled, url)
+	return err
+}
+
 const markFetched = `-- name: MarkFetched :exec
 UPDATE jobs
 SET fetched = true

@@ -136,7 +136,7 @@ func HandleSitemapSubmit(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			_ = json.NewEncoder(w).Encode(errorResponse{
 				Status:  "error",
-				Message: "failed to store job",
+				Message: "site has been submitted for indexing earlier",
 			})
 			return
 		}

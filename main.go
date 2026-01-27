@@ -54,12 +54,12 @@ func main() {
 	}
 	fmt.Println("db connection successful")
 
- //parse ApiConfig - initialize global config
- internal.Cfg = &internal.ApiConfig{
-     Port:         port,
-     RabbitMQ_Url: rabbitMQ_URL,
-     Db:           database.New(db),
- }
+	//parse ApiConfig - initialize global config
+	internal.Cfg = &internal.ApiConfig{
+		Port:         port,
+		RabbitMQ_Url: rabbitMQ_URL,
+		Db:           database.New(db),
+	}
 
 	//health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -69,44 +69,48 @@ func main() {
 	//register routes
 	RegisterRoutes(mux)
 
- //Rabbit MQ stuffs
- conn, ch, err := internal.ConnectRabbitMQ(internal.Cfg.RabbitMQ_Url)
+	//Rabbit MQ stuffs
+	conn, ch, err := internal.ConnectRabbitMQ(internal.Cfg.RabbitMQ_Url)
 
 	defer conn.Close()
 	defer ch.Close()
 	fmt.Println("RabbitMQ connection successful")
 
- // Initialize global Rabbit config
- internal.RabbitCfg = &internal.RabbitConfig{
-     URL:        rabbitMQ_URL,
-     Connection: conn,
-     Channel:    ch,
-     Exchange:   "seekr_direct",
- }
+	// Initialize global Rabbit config
+	internal.RabbitCfg = &internal.RabbitConfig{
+		URL:        rabbitMQ_URL,
+		Connection: conn,
+		Channel:    ch,
+		Exchange:   "seekr_direct",
+	}
 
- internal.RabbitCfg.CreateExchange()
+	internal.RabbitCfg.CreateExchange()
 
- _, err1 := internal.RabbitCfg.DeclareAndBindQueue("html_parser.jobs", "page.fetch.success", internal.RabbitCfg.Exchange, true)
+	_, err1 := internal.RabbitCfg.DeclareAndBindQueue("html_parser.jobs", "page.fetch.success", internal.RabbitCfg.Exchange, true)
 	if err1 != nil {
 		fmt.Println(err1)
 	}
- _, err2 := internal.RabbitCfg.DeclareAndBindQueue("html_fetcher.jobs", "url.fetch.success", internal.RabbitCfg.Exchange, true)
- if err2 != nil {
-        fmt.Println(err2)
-    }
+	_, err2 := internal.RabbitCfg.DeclareAndBindQueue("html_fetcher.jobs", "url.fetch.success", internal.RabbitCfg.Exchange, true)
+	if err2 != nil {
+		fmt.Println(err2)
+	}
 
- //RB config parsed to others
- sitemap_handler.RBcfg = *internal.RabbitCfg
+	_, err4 := internal.RabbitCfg.DeclareAndBindQueue("normalize_text.jobs", "parse.html.success", internal.RabbitCfg.Exchange, true)
+	if err4 != nil {
+		fmt.Println(err4)
+	}
+
+	//RB config parsed to others
+	sitemap_handler.RBcfg = *internal.RabbitCfg
 
 	//workers and shii
-	go func() {
-		for i := 0; i <= Workers; i++ {
-			crawler.ProcessHTML(conn)
-		}
-	}()
+	for i := 0; i < Workers; i++ {
+		go crawler.ProcessHTML(conn)
+		go crawler.ProcessParseHTML(conn)
+	}
 
 	//Server shii
- addr := fmt.Sprintf("localhost:%d", internal.Cfg.Port)
+	addr := fmt.Sprintf("localhost:%d", internal.Cfg.Port)
 	server := http.Server{Addr: addr, Handler: mux}
 	fmt.Printf("Server started on port %v\nURL: https://%v\n", port, addr)
 	if err := server.ListenAndServe(); err != nil {
