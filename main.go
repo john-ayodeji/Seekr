@@ -100,6 +100,11 @@ func main() {
 		fmt.Println(err4)
 	}
 
+	_, err5 := internal.RabbitCfg.DeclareAndBindQueue("index_tokens.jobs", "token.text.success", internal.RabbitCfg.Exchange, true)
+	if err5 != nil {
+		fmt.Println(err5)
+	}
+
 	//RB config parsed to others
 	sitemap_handler.RBcfg = *internal.RabbitCfg
 

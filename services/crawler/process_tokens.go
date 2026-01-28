@@ -1,6 +1,7 @@
 package crawler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -78,6 +79,15 @@ func ProcessTokens(conn *amqp.Connection) {
 		Links       string `json:"Links"`
 	}
 
+	type TokenData struct {
+		JobID             string
+		URL               string
+		TitleTokens       []string
+		DescriptionTokens []string
+		HeadingTokens     []string
+		ParagraphTokens   []string
+	}
+
 	for msg := range msgs {
 		var p MSG
 		if err := json.Unmarshal(msg.Body, &p); err != nil {
@@ -89,5 +99,26 @@ func ProcessTokens(conn *amqp.Connection) {
 		Description := TokenizeAndRemoveStopWords(p.Description, StopWordsMap)
 		Headings := TokenizeAndRemoveStopWords(p.Headings, StopWordsMap)
 		Paragraphs := TokenizeAndRemoveStopWords(p.Paragraphs, StopWordsMap)
+
+		q := TokenData{
+			JobID:             p.JobID,
+			URL:               p.URL,
+			TitleTokens:       Title,
+			DescriptionTokens: Description,
+			HeadingTokens:     Headings,
+			ParagraphTokens:   Paragraphs,
+		}
+
+		if err := internal.Cfg.Db.MarkTokenized(context.Background(), p.URL); err != nil {
+			fmt.Println(err)
+			msg.Nack(false, true)
+			continue
+		}
+
+		if err := internal.PublishToQueue(ch, internal.RabbitCfg.Exchange, "token.text.success", q); err != nil {
+			fmt.Println(err)
+			msg.Nack(false, true)
+			continue
+		}
 	}
 }

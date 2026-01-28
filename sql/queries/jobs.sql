@@ -14,3 +14,8 @@ WHERE url = $1;
 UPDATE jobs
 SET crawled = true
 WHERE url = $1;
+
+-- name: MarkTokenized :exec
+UPDATE jobs
+SET tokenized = true
+WHERE url = $1;

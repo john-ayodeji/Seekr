@@ -51,3 +51,14 @@ func (q *Queries) MarkFetched(ctx context.Context, url string) error {
 	_, err := q.db.ExecContext(ctx, markFetched, url)
 	return err
 }
+
+const markTokenized = `-- name: MarkTokenized :exec
+UPDATE jobs
+SET tokenized = true
+WHERE url = $1
+`
+
+func (q *Queries) MarkTokenized(ctx context.Context, url string) error {
+	_, err := q.db.ExecContext(ctx, markTokenized, url)
+	return err
+}
