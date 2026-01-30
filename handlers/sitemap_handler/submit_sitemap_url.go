@@ -1,15 +1,14 @@
 package sitemap_handler
 
 import (
-	"encoding/json"
-	"net/http"
-	"strings"
+    "encoding/json"
+    "net/http"
+    "strings"
 
-	"github.com/google/uuid"
-	"github.com/john-ayodeji/Seekr/internal"
-	"github.com/john-ayodeji/Seekr/internal/database"
-	"github.com/john-ayodeji/Seekr/services/sitemap_processor"
-	"github.com/john-ayodeji/Seekr/utils"
+    "github.com/john-ayodeji/Seekr/internal"
+    "github.com/john-ayodeji/Seekr/services/sitemap_processor"
+    "github.com/john-ayodeji/Seekr/utils"
+    "net/url"
 )
 
 var RBcfg internal.RabbitConfig
@@ -69,8 +68,8 @@ func HandleSitemapSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sitemap, jobID, err := sitemap_processor.ParseSitemap(normalizedURL)
-	if err != nil {
+ sitemap, jobID, err := sitemap_processor.ParseSitemap(normalizedURL)
+ if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(errorResponse{
 			Status:  "error",
@@ -100,11 +99,29 @@ func HandleSitemapSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ch.Close()
 
-	for _, sm := range sitemap.UrlSet {
-		nURL, err := utils.NormalizeURL(sm.Loc)
-		if err != nil {
-			continue
-		}
+ // Only allow links from the same domain as the sitemap and dedupe
+    smu, _ := url.Parse(normalizedURL)
+    allowHost := ""
+    if smu != nil { allowHost = smu.Host }
+    seen := make(map[string]struct{})
+
+    for _, sm := range sitemap.UrlSet {
+        nURL, err := utils.NormalizeURL(sm.Loc)
+        if err != nil {
+            continue
+        }
+
+        // Filter: same host as sitemap
+        pu, err := url.Parse(nURL)
+        if err != nil || pu.Host != allowHost {
+            continue
+        }
+
+        // Deduplicate
+        if _, ok := seen[nURL]; ok {
+            continue
+        }
+        seen[nURL] = struct{}{}
 
 		payload := struct {
 			JobID string `json:"job_id"`
@@ -114,33 +131,20 @@ func HandleSitemapSubmit(w http.ResponseWriter, r *http.Request) {
 			URL:   nURL,
 		}
 
-		if err := internal.PublishToQueue(
-			ch,
-			RBcfg.Exchange,
-			"url.fetch.success",
-			payload,
-		); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(errorResponse{
-				Status:  "error",
-				Message: "failed to enqueue sitemap urls",
-			})
-			return
-		}
-
-		if err := internal.Cfg.Db.CreateJob(r.Context(), database.CreateJobParams{
-			ID:    uuid.New(),
-			Jobid: jobID,
-			Url:   nURL,
-		}); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(errorResponse{
-				Status:  "error",
-				Message: "site has been submitted for indexing earlier",
-			})
-			return
-		}
-	}
+        if err := internal.PublishToQueue(
+            ch,
+            RBcfg.Exchange,
+            "url.fetch.success",
+            payload,
+        ); err != nil {
+            w.WriteHeader(http.StatusInternalServerError)
+            _ = json.NewEncoder(w).Encode(errorResponse{
+                Status:  "error",
+                Message: "failed to enqueue sitemap urls",
+            })
+            return
+        }
+    }
 
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(successResponse{

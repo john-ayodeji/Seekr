@@ -52,13 +52,13 @@ func (q *Queries) MarkFetched(ctx context.Context, url string) error {
 	return err
 }
 
-const markTokenized = `-- name: MarkTokenized :exec
+const markTokenizedAndIndexed = `-- name: MarkTokenizedAndIndexed :exec
 UPDATE jobs
-SET tokenized = true
+SET tokenized = true, indexed = true
 WHERE url = $1
 `
 
-func (q *Queries) MarkTokenized(ctx context.Context, url string) error {
-	_, err := q.db.ExecContext(ctx, markTokenized, url)
+func (q *Queries) MarkTokenizedAndIndexed(ctx context.Context, url string) error {
+	_, err := q.db.ExecContext(ctx, markTokenizedAndIndexed, url)
 	return err
 }

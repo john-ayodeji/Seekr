@@ -15,7 +15,7 @@ UPDATE jobs
 SET crawled = true
 WHERE url = $1;
 
--- name: MarkTokenized :exec
+-- name: MarkTokenizedAndIndexed :exec
 UPDATE jobs
-SET tokenized = true
+SET tokenized = true, indexed = true
 WHERE url = $1;

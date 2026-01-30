@@ -4,5 +4,6 @@
     <file url="file://$PROJECT_DIR$/sql/queries/jobs.sql" dialect="PostgreSQL" />
     <file url="file://$PROJECT_DIR$/sql/queries/parsed_html.sql" dialect="PostgreSQL" />
     <file url="file://$PROJECT_DIR$/sql/queries/raw_html.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/sql/schema/006_parsed_html.sql" dialect="PostgreSQL" />
   </component>
 </project>

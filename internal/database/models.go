@@ -5,6 +5,8 @@
 package database
 
 import (
+	"database/sql"
+
 	"github.com/google/uuid"
 )
 
@@ -19,14 +21,16 @@ type Job struct {
 }
 
 type ParsedHtml struct {
-	ID          uuid.UUID
-	Jobid       string
-	Url         string
-	Title       string
-	Description string
-	Headings    string
-	Paragraphs  string
-	Links       string
+	ID           uuid.UUID
+	Jobid        string
+	Url          string
+	Title        string
+	Description  string
+	Headings     string
+	Paragraphs   string
+	Links        string
+	SearchVector interface{}
+	IndexedAt    sql.NullTime
 }
 
 type RawHtml struct {

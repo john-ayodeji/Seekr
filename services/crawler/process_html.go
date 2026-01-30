@@ -13,8 +13,7 @@ import (
 )
 
 type payload struct {
-	JobID string `json:"job_id"`
-	URL   string `json:"url"`
+	URL string `json:"url"`
 }
 
 func ProcessHTML(conn *amqp.Connection) {
@@ -38,6 +37,15 @@ func ProcessHTML(conn *amqp.Connection) {
 			msg.Ack(false)
 			continue
 		}
+		jobID := uuid.New().String()
+
+		// Ensure a job row exists for this URL as soon as we pick it from the queue using existing CreateJob.
+		// Ignore duplicate errors due to unique(url) constraint.
+		_ = internal.Cfg.Db.CreateJob(context.Background(), database.CreateJobParams{
+			ID:    uuid.New(),
+			Jobid: jobID,
+			Url:   p.URL,
+		})
 
 		html, err := GetHTML(p.URL)
 		if err != nil {
@@ -63,7 +71,7 @@ func ProcessHTML(conn *amqp.Connection) {
 
 		data, err := internal.Cfg.Db.AddHtml(context.Background(), database.AddHtmlParams{
 			ID:    uuid.New(),
-			Jobid: p.JobID,
+			Jobid: jobID,
 			Url:   p.URL,
 			Html:  html.HTML,
 		})

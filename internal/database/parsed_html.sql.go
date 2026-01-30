@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/uuid"
 )
@@ -16,7 +17,7 @@ INSERT INTO parsed_html(
     id , jobId, url, title, description, headings, paragraphs, links
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, jobid, url, title, description, headings, paragraphs, links
+RETURNING id, jobid, url, title, description, headings, paragraphs, links, search_vector, indexed_at
 `
 
 type AddParsedHTMLParams struct {
@@ -51,6 +52,167 @@ func (q *Queries) AddParsedHTML(ctx context.Context, arg AddParsedHTMLParams) (P
 		&i.Headings,
 		&i.Paragraphs,
 		&i.Links,
+		&i.SearchVector,
+		&i.IndexedAt,
 	)
 	return i, err
+}
+
+const reindexParsedHTMLByID = `-- name: ReindexParsedHTMLByID :exec
+UPDATE parsed_html
+SET search_vector =
+        setweight(to_tsvector('english', title), 'A') ||
+        setweight(to_tsvector('english', headings), 'A') ||
+        setweight(to_tsvector('english', description), 'B') ||
+        setweight(to_tsvector('english', paragraphs), 'C')
+WHERE id = $1
+`
+
+func (q *Queries) ReindexParsedHTMLByID(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, reindexParsedHTMLByID, id)
+	return err
+}
+
+const searchParsedHTML = `-- name: SearchParsedHTML :many
+SELECT
+    id,
+    url,
+    title,
+    GREATEST(
+            (ts_rank_cd(search_vector, query) *
+             (1 + 1 / (EXTRACT(EPOCH FROM (now() - indexed_at)) / 86400 + 1))),
+            similarity(title, $1),
+            similarity(paragraphs, $1)
+    )::double precision AS rank
+FROM parsed_html,
+     to_tsquery('english', $2) query
+WHERE search_vector @@ query
+   OR title % $1
+   OR paragraphs % $1
+ORDER BY rank DESC, id
+LIMIT $3
+    OFFSET $4
+`
+
+type SearchParsedHTMLParams struct {
+	Similarity string
+	ToTsquery  string
+	Limit      int32
+	Offset     int32
+}
+
+type SearchParsedHTMLRow struct {
+	ID    uuid.UUID
+	Url   string
+	Title string
+	Rank  float64
+}
+
+func (q *Queries) SearchParsedHTML(ctx context.Context, arg SearchParsedHTMLParams) ([]SearchParsedHTMLRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchParsedHTML,
+		arg.Similarity,
+		arg.ToTsquery,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchParsedHTMLRow
+	for rows.Next() {
+		var i SearchParsedHTMLRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Url,
+			&i.Title,
+			&i.Rank,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchParsedHTMLWithSnippet = `-- name: SearchParsedHTMLWithSnippet :many
+SELECT
+    id,
+    url,
+    title,
+    ts_headline(
+            'english',
+            paragraphs,
+            query,
+            'MaxWords=30, MinWords=15'
+    ) AS snippet,
+    GREATEST(
+            (ts_rank_cd(search_vector, query) *
+             (1 + 1 / (EXTRACT(EPOCH FROM (now() - indexed_at)) / 86400 + 1))),
+            similarity(title, $1),
+            similarity(paragraphs, $1)
+    )::double precision AS rank
+FROM parsed_html,
+     to_tsquery('english', $2) query
+WHERE search_vector @@ query
+   OR title % $1
+   OR paragraphs % $1
+ORDER BY rank DESC, id
+LIMIT $3
+    OFFSET $4
+`
+
+type SearchParsedHTMLWithSnippetParams struct {
+	Similarity string
+	ToTsquery  string
+	Limit      int32
+	Offset     int32
+}
+
+type SearchParsedHTMLWithSnippetRow struct {
+	ID      uuid.UUID
+	Url     string
+	Title   string
+	Snippet json.RawMessage
+	Rank    float64
+}
+
+func (q *Queries) SearchParsedHTMLWithSnippet(ctx context.Context, arg SearchParsedHTMLWithSnippetParams) ([]SearchParsedHTMLWithSnippetRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchParsedHTMLWithSnippet,
+		arg.Similarity,
+		arg.ToTsquery,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchParsedHTMLWithSnippetRow
+	for rows.Next() {
+		var i SearchParsedHTMLWithSnippetRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Url,
+			&i.Title,
+			&i.Snippet,
+			&i.Rank,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

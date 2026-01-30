@@ -5,5 +5,6 @@
     <file url="file://$PROJECT_DIR$/sql/queries/jobs.sql" value="fdc8a415-c4e7-4c39-9b52-2d47cfce2b0c" />
     <file url="file://$PROJECT_DIR$/sql/queries/parsed_html.sql" value="fdc8a415-c4e7-4c39-9b52-2d47cfce2b0c" />
     <file url="file://$PROJECT_DIR$/sql/queries/raw_html.sql" value="fdc8a415-c4e7-4c39-9b52-2d47cfce2b0c" />
+    <file url="file://$PROJECT_DIR$/sql/schema/006_parsed_html.sql" value="fdc8a415-c4e7-4c39-9b52-2d47cfce2b0c" />
   </component>
 </project>

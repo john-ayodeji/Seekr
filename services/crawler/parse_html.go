@@ -1,16 +1,18 @@
 package crawler
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"strings"
+    "context"
+    "encoding/json"
+    "fmt"
+    "strings"
+    "net/url"
 
-	"github.com/PuerkitoBio/goquery"
-	"github.com/google/uuid"
-	"github.com/john-ayodeji/Seekr/internal"
-	"github.com/john-ayodeji/Seekr/internal/database"
-	amqp "github.com/rabbitmq/amqp091-go"
+    "github.com/PuerkitoBio/goquery"
+    "github.com/google/uuid"
+    "github.com/john-ayodeji/Seekr/internal"
+    "github.com/john-ayodeji/Seekr/internal/database"
+    "github.com/john-ayodeji/Seekr/utils"
+    amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type PageData struct {
@@ -103,24 +105,62 @@ func ProcessParseHTML(conn *amqp.Connection) {
 		dbData.Title = PageData.Title
 		dbData.Description = PageData.Description
 		for _, d := range PageData.Headings {
-			dbData.Headings += fmt.Sprintf(", %v", d)
+			dbData.Headings += fmt.Sprintf(" %v", d)
 		}
 		for _, e := range PageData.Paragraphs {
-			dbData.Paragraphs += fmt.Sprintf(", %v", e)
+			dbData.Paragraphs += fmt.Sprintf(" %v", e)
 		}
 		for _, f := range PageData.Links {
-			dbData.Links += fmt.Sprintf(", %v", f)
+			dbData.Links += fmt.Sprintf(" %v", f)
 		}
 
 		data, _ := internal.Cfg.Db.AddParsedHTML(context.Background(), dbData)
 		_ = internal.Cfg.Db.MarkCrawled(context.Background(), p.URL)
 
-		if err := internal.PublishToQueue(ch, internal.RabbitCfg.Exchange, "parse.html.success", data); err != nil {
-			_ = internal.PublishToQueue(ch, internal.RabbitCfg.Exchange, "parse.html.success", data)
-			_ = msg.Ack(false)
-			continue
-		}
+        if err := internal.PublishToQueue(ch, internal.RabbitCfg.Exchange, "index.page.success", data); err != nil {
+            _ = internal.PublishToQueue(ch, internal.RabbitCfg.Exchange, "index.page.success", data)
+            _ = msg.Ack(false)
+            continue
+        }
 
-		msg.Ack(false)
-	}
+        // Also enqueue discovered links, but only for the same domain as the current page, and dedupe per page.
+        // This keeps the crawl limited to the submitted sitemap's domain.
+        // Re-parse current page URL to get host
+        var host string
+        var base *url.URL
+        if cu, err := url.Parse(p.URL); err == nil {
+            host = cu.Host
+            base = cu
+        }
+        seen := make(map[string]struct{})
+        for _, link := range PageData.Links {
+            // Resolve relative links against the current page URL
+            candidate := link
+            if base != nil {
+                if lu, err := url.Parse(link); err == nil && !lu.IsAbs() {
+                    candidate = base.ResolveReference(lu).String()
+                }
+            }
+
+            nURL, err := utils.NormalizeURL(candidate)
+            if err != nil || nURL == "" {
+                continue
+            }
+            pu, err := url.Parse(nURL)
+            if err != nil || pu.Host != host {
+                continue
+            }
+            if _, ok := seen[nURL]; ok {
+                continue
+            }
+            seen[nURL] = struct{}{}
+            payload := struct {
+                JobID string `json:"job_id"`
+                URL   string `json:"url"`
+            }{JobID: p.JobID, URL: nURL}
+            _ = internal.PublishToQueue(ch, internal.RabbitCfg.Exchange, "url.fetch.success", payload)
+        }
+
+        msg.Ack(false)
+    }
 }

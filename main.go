@@ -95,12 +95,7 @@ func main() {
 		fmt.Println(err2)
 	}
 
-	_, err4 := internal.RabbitCfg.DeclareAndBindQueue("normalize_text.jobs", "parse.html.success", internal.RabbitCfg.Exchange, true)
-	if err4 != nil {
-		fmt.Println(err4)
-	}
-
-	_, err5 := internal.RabbitCfg.DeclareAndBindQueue("index_tokens.jobs", "token.text.success", internal.RabbitCfg.Exchange, true)
+	_, err5 := internal.RabbitCfg.DeclareAndBindQueue("index_page.jobs", "index.page.success", internal.RabbitCfg.Exchange, true)
 	if err5 != nil {
 		fmt.Println(err5)
 	}
@@ -112,6 +107,7 @@ func main() {
 	for i := 0; i < Workers; i++ {
 		go crawler.ProcessHTML(conn)
 		go crawler.ProcessParseHTML(conn)
+		go crawler.IndexPage(conn)
 	}
 
 	//Server shii
