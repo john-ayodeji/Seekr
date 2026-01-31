@@ -70,7 +70,7 @@ func main() {
 	RegisterRoutes(mux)
 
 	//Rabbit MQ stuffs
-	conn, ch, err := internal.ConnectRabbitMQ(internal.Cfg.RabbitMQ_Url)
+	conn, ch, _ := internal.ConnectRabbitMQ(internal.Cfg.RabbitMQ_Url)
 
 	defer conn.Close()
 	defer ch.Close()
@@ -111,7 +111,7 @@ func main() {
 	}
 
 	//Server shii
-	addr := fmt.Sprintf("localhost:%d", internal.Cfg.Port)
+	addr := fmt.Sprintf("0.0.0.0:%d", internal.Cfg.Port)
 	server := http.Server{Addr: addr, Handler: mux}
 	fmt.Printf("Server started on port %v\nURL: https://%v\n", port, addr)
 	if err := server.ListenAndServe(); err != nil {

@@ -1,14 +1,13 @@
 package sitemap_handler
 
 import (
-    "encoding/json"
-    "net/http"
-    "strings"
+	"encoding/json"
+	"net/http"
+	"net/url"
 
-    "github.com/john-ayodeji/Seekr/internal"
-    "github.com/john-ayodeji/Seekr/services/sitemap_processor"
-    "github.com/john-ayodeji/Seekr/utils"
-    "net/url"
+	"github.com/john-ayodeji/Seekr/internal"
+	"github.com/john-ayodeji/Seekr/services/sitemap_processor"
+	"github.com/john-ayodeji/Seekr/utils"
 )
 
 var RBcfg internal.RabbitConfig
@@ -49,14 +48,14 @@ func HandleSitemapSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !strings.HasSuffix(req.URL, "sitemap.xml") {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(errorResponse{
-			Status:  "error",
-			Message: "url should contain '/sitemap.xml'",
-		})
-		return
-	}
+	//if !strings.HasSuffix(req.URL, "sitemap.xml") {
+	//	w.WriteHeader(http.StatusBadRequest)
+	//	_ = json.NewEncoder(w).Encode(errorResponse{
+	//		Status:  "error",
+	//		Message: "url should contain '/sitemap.xml'",
+	//	})
+	//	return
+	//}
 
 	normalizedURL, err := utils.NormalizeURL(req.URL)
 	if err != nil {
@@ -68,8 +67,8 @@ func HandleSitemapSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
- sitemap, jobID, err := sitemap_processor.ParseSitemap(normalizedURL)
- if err != nil {
+	sitemap, jobID, err := sitemap_processor.ParseSitemap(normalizedURL)
+	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(errorResponse{
 			Status:  "error",
@@ -99,29 +98,31 @@ func HandleSitemapSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ch.Close()
 
- // Only allow links from the same domain as the sitemap and dedupe
-    smu, _ := url.Parse(normalizedURL)
-    allowHost := ""
-    if smu != nil { allowHost = smu.Host }
-    seen := make(map[string]struct{})
+	// Only allow links from the same domain as the sitemap and dedupe
+	smu, _ := url.Parse(normalizedURL)
+	allowHost := ""
+	if smu != nil {
+		allowHost = smu.Host
+	}
+	seen := make(map[string]struct{})
 
-    for _, sm := range sitemap.UrlSet {
-        nURL, err := utils.NormalizeURL(sm.Loc)
-        if err != nil {
-            continue
-        }
+	for _, sm := range sitemap.UrlSet {
+		nURL, err := utils.NormalizeURL(sm.Loc)
+		if err != nil {
+			continue
+		}
 
-        // Filter: same host as sitemap
-        pu, err := url.Parse(nURL)
-        if err != nil || pu.Host != allowHost {
-            continue
-        }
+		// Filter: same host as sitemap
+		pu, err := url.Parse(nURL)
+		if err != nil || pu.Host != allowHost {
+			continue
+		}
 
-        // Deduplicate
-        if _, ok := seen[nURL]; ok {
-            continue
-        }
-        seen[nURL] = struct{}{}
+		// Deduplicate
+		if _, ok := seen[nURL]; ok {
+			continue
+		}
+		seen[nURL] = struct{}{}
 
 		payload := struct {
 			JobID string `json:"job_id"`
@@ -131,20 +132,20 @@ func HandleSitemapSubmit(w http.ResponseWriter, r *http.Request) {
 			URL:   nURL,
 		}
 
-        if err := internal.PublishToQueue(
-            ch,
-            RBcfg.Exchange,
-            "url.fetch.success",
-            payload,
-        ); err != nil {
-            w.WriteHeader(http.StatusInternalServerError)
-            _ = json.NewEncoder(w).Encode(errorResponse{
-                Status:  "error",
-                Message: "failed to enqueue sitemap urls",
-            })
-            return
-        }
-    }
+		if err := internal.PublishToQueue(
+			ch,
+			RBcfg.Exchange,
+			"url.fetch.success",
+			payload,
+		); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(errorResponse{
+				Status:  "error",
+				Message: "failed to enqueue sitemap urls",
+			})
+			return
+		}
+	}
 
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(successResponse{
